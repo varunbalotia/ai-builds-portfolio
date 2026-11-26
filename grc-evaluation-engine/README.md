@@ -65,4 +65,4 @@ I built the frontend to allow users to paste structured JSON or unstructured tex
 
 Teaching AI safety doesn't require a backend. In a classroom setting, instructors can use the [GRC LLM Test Suite](https://docs.google.com/document/d/1VghL4GAz4chIZoAbgwRlfVZERBWvjJhGudom-MFBmnk/edit?tab=t.m8ytaiys16x5) as a workshop. Students are divided into "Attackers" (who try to sneak a bias or hallucination past a toy evaluator) and "Defenders" (who have to write a single regex or LLM prompt to catch it). This teaches students how to think adversarially about AI outputs.
 
-**Build log:** Engine architecture and evaluation suite built in late 2026.
+
