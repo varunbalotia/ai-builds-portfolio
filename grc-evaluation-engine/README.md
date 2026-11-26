@@ -1,8 +1,10 @@
 # GRC Evaluation Engine (LLM-as-a-Judge)
 
-A 9-stage pipeline that evaluates AI-generated text for safety, bias, hallucination risk, and compliance. 
+A live, 9-stage pipeline that evaluates AI-generated text for safety, bias, hallucination risk, and compliance. 
 
-> **Note:** The core engine code and detection patterns are private (proprietary client work). This folder serves as architecture documentation and proof-of-evaluation.
+**Live demo:** [AI Governance & Compliance Engine](https://rniam.com/grc/)
+
+> **Note:** The core Python engine and detection patterns are kept private (proprietary logic). This repository contains the architecture documentation, evaluation design, and proof of deployment.
 
 ![Scorecard](screenshot-scorecard.png)
 
@@ -12,7 +14,7 @@ Deploying LLMs in enterprise or high-stakes environments (medical, legal, financ
 
 ## 2. The Architecture
 
-The engine is built in Python and uses the **Gemini API** for semantic extraction and deep evaluation. It includes a two-phase security gate to block prompt injection and PII leakage before any expensive API calls are made.
+The engine is built in Python and uses the **Gemini API** for semantic extraction and deep evaluation. It includes a two-phase security gate to block prompt injection and PII leakage before any expensive API calls are made. The UI is a custom web frontend that consumes the evaluation results in real-time.
 
 ```mermaid
 flowchart TD
