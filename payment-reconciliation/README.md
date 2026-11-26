@@ -1,2 +1,2 @@
-# Payment Reconciliation Dashboard
+# Scaffold payment-reconciliation folder
 
