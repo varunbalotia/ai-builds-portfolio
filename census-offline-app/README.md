@@ -1,1 +1,1 @@
-Scaffold census-offline-app folder
+#Scaffold census-offline-app folder
