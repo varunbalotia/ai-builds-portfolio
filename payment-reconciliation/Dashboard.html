@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fintech Reconciliation Dashboard</title>
+    
+    <!-- Chosen Palette: Warm Neutrals with Status Accents (Slate gray background, white cards, strict Red/Yellow/Blue/Orange for gaps) -->
+    <!-- Application Structure Plan: A single-page dashboard. The header provides file upload capabilities to ingest the CSVs. Below, an executive summary gives a quick quantitative overview. The main workspace is split: a Donut chart visualizes the distribution of gap types, while a tabbed interface allows deep dives into the 'Discrepancies' (Tab 1) and 'Corrected Ledger' (Tab 2). This side-by-side analytical structure allows the auditor to understand the macro trends while interacting with the micro data. -->
+    <!-- Visualization & Content Choices: 
+    1. Goal: Overview -> Viz: Summary Cards -> Library: HTML/Tailwind -> Justifies rapid quantitative assessment.
+    2. Goal: Compare Gaps -> Viz: Donut Chart -> Library: Chart.js -> Shows proportion of Timing vs Rounding vs Duplicate vs Orphan clearly without SVGs.
+    3. Goal: Organize Data -> Viz: Interactive Tabbed Tables -> Library: Vanilla JS + HTML -> Allows row-by-row auditing with strict color coding (Red, Yellow, Blue, Orange) as requested.
+    4. Goal: Export -> Viz: Action Buttons -> Library: SheetJS -> Fulfills the requirement to generate a multi-tab Spreadsheet and a final CSV. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; color: #334155; }
+        .chart-container { position: relative; width: 100%; max-width: 400px; margin-left: auto; margin-right: auto; height: 300px; max-height: 350px; }
+        .tab-btn { transition: all 0.2s ease-in-out; }
+        .tab-btn.active { border-bottom: 3px solid #0f172a; color: #0f172a; font-weight: 600; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .table-container { max-height: 60vh; overflow-y: auto; }
+        thead th { position: sticky; top: 0; z-index: 10; background-color: #f1f5f9; }
+        
+        .row-duplicate { background-color: #fee2e2; color: #991b1b; }
+        .row-timing { background-color: #fef3c7; color: #92400e; }
+        .row-rounding { background-color: #dbeafe; color: #1e40af; }
+        .row-orphan { background-color: #ffedd5; color: #9a3412; }
+        .row-matched { background-color: #ffffff; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="container mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center">
+            <div class="mb-4 md:mb-0">
+                <h1 class="text-2xl font-bold tracking-tight">Data Audit Workbench</h1>
+                <p class="text-slate-400 text-sm">Fintech Transaction Reconciliation Engine</p>
+            </div>
+            <div class="flex flex-col md:flex-row gap-4 items-center">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-semibold">Platform CSV:</label>
+                    <input type="file" id="platformFile" accept=".csv" class="text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-white hover:file:bg-slate-600 cursor-pointer">
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-semibold">Bank CSV:</label>
+                    <input type="file" id="bankFile" accept=".csv" class="text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-white hover:file:bg-slate-600 cursor-pointer">
+                </div>
+                <button id="processBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-md font-bold transition shadow-lg">Run Audit</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-8 flex-grow">
+        
+        <div class="mb-8 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold text-slate-800 mb-2">Reconciliation Overview</h2>
+            <p class="text-slate-600 text-sm">
+                This dashboard analyzes uploaded transaction data to automatically detect and classify reconciliation discrepancies. The system maps records between the internal Platform and external Bank files, identifying <strong>Timing Gaps</strong> (month mismatches), <strong>Rounding Errors</strong> (sum mismatches), <strong>Duplicates</strong> (1:N mappings), and <strong>Orphans</strong> (unmatched records or standalone refunds). Use the interface below to explore identified issues and download the finalized, corrected ledger.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8" id="statsGrid">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 text-center">
+                <div class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Txns</div>
+                <div class="text-2xl font-black text-slate-800" id="statTotal">0</div>
+            </div>
+            <div class="bg-red-50 p-4 rounded-xl shadow-sm border border-red-100 text-center">
+                <div class="text-red-600 text-xs font-bold uppercase tracking-wider mb-1">Duplicates (Red)</div>
+                <div class="text-2xl font-black text-red-700" id="statDup">0</div>
+            </div>
+            <div class="bg-yellow-50 p-4 rounded-xl shadow-sm border border-yellow-100 text-center">
+                <div class="text-yellow-600 text-xs font-bold uppercase tracking-wider mb-1">Timing (Yellow)</div>
+                <div class="text-2xl font-black text-yellow-700" id="statTime">0</div>
+            </div>
+            <div class="bg-blue-50 p-4 rounded-xl shadow-sm border border-blue-100 text-center">
+                <div class="text-blue-600 text-xs font-bold uppercase tracking-wider mb-1">Rounding (Blue)</div>
+                <div class="text-2xl font-black text-blue-700" id="statRound">0</div>
+            </div>
+            <div class="bg-orange-50 p-4 rounded-xl shadow-sm border border-orange-100 text-center">
+                <div class="text-orange-600 text-xs font-bold uppercase tracking-wider mb-1">Orphans (Orange)</div>
+                <div class="text-2xl font-black text-orange-700" id="statOrph">0</div>
+            </div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-8">
+            
+            <div class="w-full lg:w-1/3 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                <h3 class="text-md font-bold text-slate-800 mb-4 border-b pb-2">Gap Distribution</h3>
+                <p class="text-xs text-slate-500 mb-4">A proportional breakdown of identified discrepancies requiring auditor review.</p>
+                <div class="chart-container flex-grow flex items-center justify-center">
+                    <canvas id="gapChart"></canvas>
+                </div>
+            </div>
+
+            <div class="w-full lg:w-2/3 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-6 border-b border-slate-200 pb-2">
+                    <div class="flex gap-6 mb-4 sm:mb-0">
+                        <button class="tab-btn active pb-2 text-slate-500 hover:text-slate-800" data-target="tab1">Tab 1: Discrepancies</button>
+                        <button class="tab-btn pb-2 text-slate-500 hover:text-slate-800" data-target="tab2">Tab 2: Corrected Ledger</button>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="exportSpreadsheetBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-sm font-semibold shadow transition">
+                            &#128190; Export Spreadsheet
+                        </button>
+                        <button id="exportCsvBtn" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded text-sm font-semibold shadow transition">
+                            &#128196; Download Corrected CSV
+                        </button>
+                    </div>
+                </div>
+
+                <div id="tab1" class="tab-content active">
+                    <p class="text-sm text-slate-600 mb-4">This table isolates all problematic transactions mapping to the four core gap typologies. Row colors correspond to the specific audit finding.</p>
+                    <div class="table-container border border-slate-200 rounded-lg">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead>
+                                <tr>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Gap Type</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Transaction ID</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Consumer ID</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Platform Value</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Bank Value</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="discrepanciesBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="tab2" class="tab-content">
+                    <p class="text-sm text-slate-600 mb-4">The final reconciled ledger. Duplicates are collapsed, timing/rounding conflicts are overridden with Bank source-of-truth where applicable, and orphans are flagged.</p>
+                    <div class="table-container border border-slate-200 rounded-lg">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead>
+                                <tr>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Reconciliation Status</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Transaction ID</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Consumer ID</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Date Stamp</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Settled Value</th>
+                                    <th class="py-3 px-4 font-bold text-slate-700 border-b">Reference</th>
+                                </tr>
+                            </thead>
+                            <tbody id="correctedBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const defaultPlatformCSV = `consumer id,transaction id,time and date stamp,currency value,transaction status,settlement reference number
+USR_754,TXN_1000,2026-04-04 00:47:00,144.76,Success,UTR1147045155
+USR_328,TXN_1001,2026-04-05 23:06:00,341.58,Success,UTR8889988775
+USR_658,TXN_1002,2026-04-03 18:27:00,25.57,Success,UTR5097486888
+USR_195,TXN_1003,2026-04-07 07:32:00,304.99,Success,UTR9213134177
+USR_195,TXN_1003,2026-04-07 07:32:00,304.99,Success,UTR9213134177
+USR_674,TXN_1004,2026-04-07 22:41:00,353.65,Refund,UTR1094034237
+USR_529,TXN_1005,2026-04-08 14:37:00,146.31,Success,UTR4342503914`;
+
+        const defaultBankCSV = `consumer id,transaction id,time and date stamp,currency value,transaction status,settlement reference number
+USR_754,TXN_1000,2026-04-04 00:47:00,144.76,Success,UTR1147045155
+USR_328,TXN_1001,2026-05-05 23:06:00,341.58,Success,UTR8889988775
+USR_658,TXN_1002,2026-04-03 18:27:00,25.80,Success,UTR5097486888
+USR_195,TXN_1003,2026-04-07 07:32:00,304.99,Success,UTR9213134177
+USR_529,TXN_1005,2026-04-08 14:37:00,146.31,Success,UTR4342503914`;
+
+        let appState = {
+            gaps: [],
+            corrected: [],
+            chartInstance: null
+        };
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                e.target.classList.add('active');
+                document.getElementById(e.target.dataset.target).classList.add('active');
+            });
+        });
+
+        document.getElementById('processBtn').addEventListener('click', async () => {
+            const pFile = document.getElementById('platformFile').files[0];
+            const bFile = document.getElementById('bankFile').files[0];
+
+            let pText = defaultPlatformCSV;
+            let bText = defaultBankCSV;
+
+            if (pFile && bFile) {
+                pText = await pFile.text();
+                bText = await bFile.text();
+            }
+
+            Papa.parse(pText, { header: true, skipEmptyLines: true, complete: function(pResults) {
+                Papa.parse(bText, { header: true, skipEmptyLines: true, complete: function(bResults) {
+                    runAuditEngine(pResults.data, bResults.data);
+                }});
+            }});
+        });
+
+        function runAuditEngine(platformData, bankData) {
+            appState.gaps = [];
+            appState.corrected = [];
+
+            let pMap = {};
+            let bMap = {};
+
+            platformData.forEach(r => {
+                const id = r['transaction id'];
+                if (pMap[id]) {
+                    appState.gaps.push({ gapType: 'Duplicate', id: id, cid: r['consumer id'], pVal: r['currency value'], bVal: '-', detail: 'Platform 1:N mapping' });
+                } else {
+                    pMap[id] = r;
+                }
+            });
+
+            bankData.forEach(r => {
+                const id = r['transaction id'];
+                if (bMap[id]) {
+                    if (!appState.gaps.find(g => g.id === id && g.gapType === 'Duplicate')) {
+                        appState.gaps.push({ gapType: 'Duplicate', id: id, cid: r['consumer id'], pVal: '-', bVal: r['currency value'], detail: 'Bank 1:N mapping' });
+                    }
+                } else {
+                    bMap[id] = r;
+                }
+            });
+
+            Object.keys(pMap).forEach(id => {
+                let pRow = pMap[id];
+                let bRow = bMap[id];
+
+                if (!bRow) {
+                    appState.gaps.push({ gapType: 'Orphan', id: id, cid: pRow['consumer id'], pVal: pRow['currency value'], bVal: 'N/A', detail: pRow['transaction status'] === 'Refund' ? 'Refund without parent' : 'Missing in Bank' });
+                    appState.corrected.push({ status: 'Unsettled Orphan', id: id, cid: pRow['consumer id'], date: pRow['time and date stamp'], val: pRow['currency value'], ref: pRow['settlement reference number'] || 'None' });
+                } else {
+                    let pDate = new Date(pRow['time and date stamp']);
+                    let bDate = new Date(bRow['time and date stamp']);
+                    let timingGap = pDate.getMonth() !== bDate.getMonth() || pDate.getFullYear() !== bDate.getFullYear();
+                    
+                    let pVal = parseFloat(pRow['currency value']);
+                    let bVal = parseFloat(bRow['currency value']);
+                    let roundingGap = Math.abs(pVal - bVal) > 0 && Math.abs(pVal - bVal) < 2.0;
+
+                    if (timingGap) appState.gaps.push({ gapType: 'Timing', id: id, cid: pRow['consumer id'], pVal: pRow['currency value'], bVal: bRow['currency value'], detail: `P: M${pDate.getMonth()+1} vs B: M${bDate.getMonth()+1}` });
+                    if (roundingGap) appState.gaps.push({ gapType: 'Rounding', id: id, cid: pRow['consumer id'], pVal: pRow['currency value'], bVal: bRow['currency value'], detail: `Sum mismatch: ${(Math.abs(pVal-bVal)).toFixed(2)}` });
+
+                    if (!timingGap && !roundingGap) {
+                        appState.corrected.push({ status: 'Matched', id: id, cid: pRow['consumer id'], date: pRow['time and date stamp'], val: pRow['currency value'], ref: bRow['settlement reference number'] });
+                    } else {
+                        appState.corrected.push({ status: 'Corrected', id: id, cid: pRow['consumer id'], date: bRow['time and date stamp'], val: bRow['currency value'], ref: bRow['settlement reference number'] });
+                    }
+                }
+            });
+
+            Object.keys(bMap).forEach(id => {
+                if (!pMap[id]) {
+                    appState.gaps.push({ gapType: 'Orphan', id: id, cid: bMap[id]['consumer id'], pVal: 'N/A', bVal: bMap[id]['currency value'], detail: 'Missing in Platform' });
+                    appState.corrected.push({ status: 'Bank Only', id: id, cid: bMap[id]['consumer id'], date: bMap[id]['time and date stamp'], val: bMap[id]['currency value'], ref: bMap[id]['settlement reference number'] });
+                }
+            });
+
+            updateUI();
+        }
+
+        function updateUI() {
+            const counts = { Duplicate: 0, Timing: 0, Rounding: 0, Orphan: 0 };
+            appState.gaps.forEach(g => counts[g.gapType]++);
+            
+            document.getElementById('statTotal').innerText = appState.corrected.length + appState.gaps.filter(g => g.gapType==='Duplicate').length;
+            document.getElementById('statDup').innerText = counts.Duplicate;
+            document.getElementById('statTime').innerText = counts.Timing;
+            document.getElementById('statRound').innerText = counts.Rounding;
+            document.getElementById('statOrph').innerText = counts.Orphan;
+
+            const tbody1 = document.getElementById('discrepanciesBody');
+            tbody1.innerHTML = '';
+            appState.gaps.forEach(g => {
+                let tr = document.createElement('tr');
+                tr.className = `border-b row-${g.gapType.toLowerCase()}`;
+                tr.innerHTML = `<td class="py-2 px-4 font-bold uppercase text-xs">${g.gapType}</td><td class="py-2 px-4 font-mono text-xs">${g.id}</td><td class="py-2 px-4">${g.cid}</td><td class="py-2 px-4">${g.pVal}</td><td class="py-2 px-4">${g.bVal}</td><td class="py-2 px-4 text-xs italic">${g.detail}</td>`;
+                tbody1.appendChild(tr);
+            });
+
+            const tbody2 = document.getElementById('correctedBody');
+            tbody2.innerHTML = '';
+            appState.corrected.forEach(c => {
+                let tr = document.createElement('tr');
+                tr.className = 'border-b hover:bg-slate-50 transition';
+                let statusClass = c.status === 'Matched' ? 'text-green-600 font-bold' : c.status === 'Corrected' ? 'text-indigo-600 font-bold' : 'text-slate-500';
+                tr.innerHTML = `<td class="py-2 px-4 ${statusClass}">${c.status}</td><td class="py-2 px-4 font-mono text-xs">${c.id}</td><td class="py-2 px-4">${c.cid}</td><td class="py-2 px-4">${c.date}</td><td class="py-2 px-4">${c.val}</td><td class="py-2 px-4 text-xs">${c.ref}</td>`;
+                tbody2.appendChild(tr);
+            });
+
+            renderChart(counts);
+        }
+
+        function renderChart(counts) {
+            const ctx = document.getElementById('gapChart').getContext('2d');
+            if (appState.chartInstance) appState.chartInstance.destroy();
+
+            appState.chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Duplicates', 'Timing', 'Rounding', 'Orphans'],
+                    datasets: [{
+                        data: [counts.Duplicate, counts.Timing, counts.Rounding, counts.Orphan],
+                        backgroundColor: ['#ef4444', '#eab308', '#3b82f6', '#f97316'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+                    },
+                    cutout: '65%'
+                }
+            });
+        }
+
+        document.getElementById('exportSpreadsheetBtn').addEventListener('click', () => {
+            const wb = XLSX.utils.book_new();
+            
+            const ws1Data = appState.gaps.map(g => ({
+                'Gap Type': g.gapType,
+                'Transaction ID': g.id,
+                'Consumer ID': g.cid,
+                'Platform Value': g.pVal,
+                'Bank Value': g.bVal,
+                'Audit Detail': g.detail
+            }));
+            const ws1 = XLSX.utils.json_to_sheet(ws1Data);
+            XLSX.utils.book_append_sheet(wb, ws1, "Discrepancies (Tab 1)");
+
+            const ws2Data = appState.corrected.map(c => ({
+                'Reconciliation Status': c.status,
+                'Transaction ID': c.id,
+                'Consumer ID': c.cid,
+                'Settlement Date': c.date,
+                'Settled Value': c.val,
+                'Reference Number': c.ref
+            }));
+            const ws2 = XLSX.utils.json_to_sheet(ws2Data);
+            XLSX.utils.book_append_sheet(wb, ws2, "Corrected Ledger (Tab 2)");
+
+            XLSX.writeFile(wb, "Fintech_Audit_Report.xlsx");
+        });
+
+        document.getElementById('exportCsvBtn').addEventListener('click', () => {
+            const csvData = appState.corrected.map(c => ({
+                'Reconciliation Status': c.status,
+                'Transaction ID': c.id,
+                'Consumer ID': c.cid,
+                'Settlement Date': c.date,
+                'Settled Value': c.val,
+                'Reference Number': c.ref
+            }));
+            const csv = Papa.unparse(csvData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "Corrected_Ledger_Final.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        window.onload = () => {
+            Papa.parse(defaultPlatformCSV, { header: true, skipEmptyLines: true, complete: function(p) {
+                Papa.parse(defaultBankCSV, { header: true, skipEmptyLines: true, complete: function(b) {
+                    runAuditEngine(p.data, b.data);
+                }});
+            }});
+        };
+    </script>
+</body>
+</html>
