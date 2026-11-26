@@ -30,7 +30,7 @@ flowchart TD
     H --> I[Tier assignment + escalation]
     I --> J[GRC score = weighted composite]
     J --> K[Score card + audit trail → JSON]
-
+```
 ## 3. Red-Teaming & Evaluation: Policy Hallucination
 
 Before trusting the engine, I built an Adversarial Test Suite to evaluate how AI handles **Policy Hallucination**—fabricating legal facts when faced with authoritative-sounding queries.
