@@ -4,7 +4,7 @@ Upload a platform CSV and a bank CSV; the dashboard matches transactions, classi
 
 **Live demo:** [open it](https://varunbalotia.github.io/ai-builds-portfolio/payment-reconciliation/Dashboard.html)
 
-![Overview](overview_Bank_data .png)
+[Overview](overview_Bank_data .png)
 
 ## 1. The problem
 
