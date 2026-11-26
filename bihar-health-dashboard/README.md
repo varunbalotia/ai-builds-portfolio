@@ -2,7 +2,7 @@
 
 A Streamlit-based dashboard designed for a Program Management Unit (PMU) to monitor RMNCH+A health indicators across districts.
 
-**Live demo:** [open it](https://YOUR-STREAMLIT-URL-HERE.streamlit.app/)
+**Live demo:** [open it](https://bihar-health-kpi.streamlit.app/)
 
 ![Overview](bihar-overview.png)
 
