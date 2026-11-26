@@ -39,4 +39,4 @@ preserved in the diff.
 
 ## Contact
 
-[Varun] — [github.com/varunbalotia](https://github.com/varunbalotia) — [varunbalotia@gmail.com]
+Varun — [github.com/varunbalotia](https://github.com/varunbalotia) — varunbalotia@gmail.com
