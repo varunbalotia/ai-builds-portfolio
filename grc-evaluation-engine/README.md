@@ -6,7 +6,7 @@ A live, 9-stage pipeline that evaluates AI-generated text for safety, bias, hall
 
 > **Note:** The core Python engine and detection patterns are kept private (proprietary logic). This repository contains the architecture documentation, evaluation design, and proof of deployment.
 
-**[View the Sample Evaluation Report (PDF)](sample-evaluation-report.pdf)**
+![Scorecard](screenshot-scorecard.png)
 
 ## 1. The problem
 
